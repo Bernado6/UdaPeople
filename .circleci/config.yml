@@ -1,5 +1,11 @@
 version: 2.1
 
+parameters:
+  cci_wait_timeout:
+      default: 1200
+      description: |
+        The wait timeout for the step to complete.The string is a decimal with unit suffix, such as “20m”, “1.25h”, “5s” (default: 10 minutes)
+      type: integer
 commands:
   destroy-environment:
     description: Destroy back-end and front-end cloudformation stacks given a workflow ID.
@@ -19,7 +25,27 @@ commands:
           command: |
             echo "Destroying environment: << parameters.workflow_id >> "
             aws cloudformation delete-stack --stack-name udapeople-backend-<<parameters.workflow_id>>
-            
+  revert-migrations:
+    description: Revert the last migration if successfully run in the current workflow.   
+    parameters:
+      workflow_id:
+        type: string  
+    steps:
+      - run:
+          name: Revert migrations
+          when: on_fail
+          command: |
+            export SUCCESS=$(curl -k https://kvdb.io/14qV1F64XYqNDSAAyhW75u/migration_${CIRCLE_WORKFLOW_ID:0:7})
+            if (($SUCCESS == 1)); then
+              echo "Reverting migrations..."
+              cd ~/project/backend
+              npm install
+              npm run migrations:revert
+            else
+              echo "$SUCCESS"
+              echo "No migrations to revert."
+            fi
+                       
 jobs:
   build-frontend:
     docker:
@@ -54,7 +80,6 @@ jobs:
       - save_cache:
           paths: [backend/node_modules]
           key: backend-build
-  
   test-frontend:
     docker:
       - image: circleci/node:13.8.0
@@ -63,15 +88,12 @@ jobs:
       - restore_cache:
           keys: [frontend-build]
       - run:
-          name: Front-end test
+          name: frontend-test
           command: |
             cd frontend
             npm install
             npm run test
-      - save_cache:
-          paths: [frontend/node_modules]
-          key: frontend-test
-  
+                
   test-backend:
     docker:
       - image: circleci/node:13.8.0
@@ -80,15 +102,11 @@ jobs:
       - restore_cache:
           keys: [backend-build]
       - run:
-          name: Back-end test
+          name: backend-test
           command: |
             cd backend
             npm install
             npm run test
-      - save_cache:
-          paths: [backend/node_modules]
-          key: backend-test
-  
   scan-frontend:
     docker:
       - image: circleci/node:13.8.0
@@ -97,15 +115,11 @@ jobs:
       - restore_cache:
           keys: [frontend-build]
       - run:
-          name: Front-end scan
+          name: scan frontend
           command: |
             cd frontend
             npm install
             npm audit fix --audit-level=critical --force
-      - save_cache:
-          paths: [frontend/node_modules]
-          key: frontend-scan
-
   scan-backend:
     docker:
       - image: circleci/node:13.8.0
@@ -114,15 +128,11 @@ jobs:
       - restore_cache:
           keys: [backend-build]
       - run:
-          name: Back-end scan
+          name: scan backend
           command: |
             cd backend
             npm install
             npm audit fix --audit-level=critical --force
-      - save_cache:
-          paths: [backend/node_modules]
-          key: backend-scan
-  
   deploy-infrastructure:
     docker:
       - image: amazon/aws-cli
@@ -139,7 +149,8 @@ jobs:
               --template-file .circleci/files/backend.yml \
               --stack-name "udapeople-backend-${CIRCLE_WORKFLOW_ID:0:7}" \
               --parameter-overrides ID="${CIRCLE_WORKFLOW_ID:0:7}" \
-              --tags project=udapeople
+              --tags project=udapeople            
+              
       - run:
           name: Ensure front-end infrastructure exist
           command: |
@@ -147,7 +158,8 @@ jobs:
               --template-file .circleci/files/frontend.yml \
               --tags project=udapeople \
               --stack-name "udapeople-frontend-${CIRCLE_WORKFLOW_ID:0:7}" \
-              --parameter-overrides ID="${CIRCLE_WORKFLOW_ID:0:7}"
+              --parameter-overrides ID="${CIRCLE_WORKFLOW_ID:0:7}"  
+              
       - run:
           name: Add back-end ip to ansible inventory
           command: |
@@ -169,7 +181,7 @@ jobs:
     steps:
       - checkout
       - add_ssh_keys:
-          fingerprints: ["56:e6:e0:69:1a:cc:1b:cf:a1:67:99:70:1f:88:a5:e7"]
+          fingerprints: ["f6:79:5d:d1:c1:42:e7:e1:9b:90:75:c4:12:94:ea:40"]
       - attach_workspace:
           at: ~/
       - run:
@@ -193,8 +205,8 @@ jobs:
             echo TYPEORM_HOST=database-1.cjip2vcmn4xa.us-east-1.rds.amazonaws.com >> backend/.env
             echo TYPEORM_PORT=5432 >> backend/.env
             echo TYPEORM_USERNAME=postgres >> backend/.env
-            echo TYPEORM_PASSWORD=postgres  >> backend/.env
-            echo TYPEORM_DATABASE=postgres >> backend/.env
+            echo TYPEORM_PASSWORD=postgres >> backend/.env
+            echo TYPEORM_DATABASE=udapeopledb >> backend/.env
             cat backend/.env
             cd .circleci/ansible
             cat inventory.txt
@@ -204,8 +216,8 @@ jobs:
           paths:
             - project/backend/.env
       - destroy-environment:
-          workflow_id: ${CIRCLE_WORKFLOW_ID:0:7} 
-  
+          workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
+
   run-migrations:
     docker:
       - image: circleci/node:13.8.0
@@ -244,6 +256,7 @@ jobs:
             - project/backend/.env
       - destroy-environment:
           workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
+  deploy-frontend: 
 
 workflows:
   default:
@@ -265,5 +278,11 @@ workflows:
               only: [master]
       - configure-infrastructure:
           requires: [deploy-infrastructure]
+          filters:
+            branches:
+              only: [master]
       - run-migrations:
           requires: [configure-infrastructure]
+          filters:
+            branches:
+              only: [master]
