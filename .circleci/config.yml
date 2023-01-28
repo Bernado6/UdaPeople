@@ -224,9 +224,9 @@ jobs:
           root: ~/
           paths:
             - project/backend/.env
-      - destroy-environment:
-          workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
-          
+      - destroy-environment
+      - revert-migrations
+
   run-migrations:
     docker:
       - image: cimg/node:13.8.0
