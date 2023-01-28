@@ -247,8 +247,10 @@ jobs:
           command: |
             curl https://kvdb.io/14qV1F64XYqNDSAAyhW75u/migration_{CIRCLE_WORKFLOW_ID:0:7}  -d '1'
         
-      - destroy-environment
-      - revert-migrations 
+      - destroy-environment:
+          workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
+      - revert-migrations:
+          workflow_id: ${CIRCLE_WORKFLOW_ID:0:7}
 
 workflows:
   default:
